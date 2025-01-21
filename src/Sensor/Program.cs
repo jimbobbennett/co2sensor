@@ -1,22 +1,28 @@
 ﻿using System.Device.I2c;
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 
 using Iot.Device.Scd4x;
-
 using UnitsNet;
 
 using MQTTnet.Client;
 
 using CO2Sensor.Shared;
 
-// Connect to the Event Grid MQTT broker
-var hostname = "co2sensor.westus-1.ts.eventgrid.azure.net";
-var userName = "client1-authn-ID";
-var clientId = "client1-session1";
-var x509_pem = "client1-authn-ID.pem";
-var x509_key = "client1-authn-ID.key";
+// Build configuration
+var configuration = new ConfigurationBuilder()
+    .SetBasePath(Directory.GetCurrentDirectory())
+    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+    .Build();
 
-var mqttClient = await MQTTConnection.CreateClient(x509_pem, x509_key, hostname, clientId, userName).ConfigureAwait(false);
+// Read settings from configuration
+var mqttSettings = configuration.GetSection("MQTT");
+
+// Connect to the Event Grid MQTT broker
+var mqttClient = await MQTTConnection.CreateClient(mqttSettings["X509Pem"], 
+                                                   mqttSettings["X509Key"], 
+                                                   mqttSettings["Hostname"], 
+                                                   mqttSettings["ClientId"]).ConfigureAwait(false);
 
 // Connect to the CO2 sensor
 I2cConnectionSettings settings = new(1, Scd4x.DefaultI2cAddress);
@@ -24,7 +30,7 @@ I2cDevice device = I2cDevice.Create(settings);
 Scd4x sensor = new(device);
 
 // Loop forever, reading CO2 measurements and publishing them to the Event Grid MQTT broker
-while(true)
+while (true)
 {
     // Read the measurement.
     // This async operation will not finish until the next measurement period, every 5 seconds
@@ -40,5 +46,5 @@ while(true)
 
     // Publish the CO2 measurement to the Event Grid MQTT broker
     var co2Record = new CO2Measurement { CO2 = co2.Value.PartsPerMillion };
-    await mqttClient.PublishStringAsync("CO2TopicSpace/co2", JsonSerializer.Serialize(co2Record)).ConfigureAwait(false);
+    await mqttClient.PublishStringAsync(mqttSettings["Topic"], JsonSerializer.Serialize(co2Record)).ConfigureAwait(false);
 }

@@ -1,0 +1,9 @@
+{
+  "MQTT": {
+    "Hostname": "",
+    "ClientId": "",
+    "X509Pem": "",
+    "X509Key": "",
+    "Topic": ""
+  }
+}

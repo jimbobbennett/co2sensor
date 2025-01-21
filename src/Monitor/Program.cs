@@ -1,6 +1,9 @@
 ﻿using System.Drawing;
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 
+// Use the local Blinkt file for now. A PR has been merged to the dotnet/iot repo with this file, but
+// this hasn't been released as a nuget package yet.
 using Iot.Device.Blinkt;
 
 using MQTTnet;
@@ -8,14 +11,20 @@ using MQTTnet.Client;
 
 using CO2Sensor.Shared;
 
-// Connect to the Event Grid MQTT broker
-var hostname = "co2sensor.westus-1.ts.eventgrid.azure.net";
-var userName = "client2-authn-ID";
-var clientId = "client2-session1";
-var x509_pem = "client2-authn-ID.pem";
-var x509_key = "client2-authn-ID.key";
+// Build configuration
+var configuration = new ConfigurationBuilder()
+    .SetBasePath(Directory.GetCurrentDirectory())
+    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+    .Build();
 
-var mqttClient = await MQTTConnection.CreateClient(x509_pem, x509_key, hostname, clientId, userName).ConfigureAwait(false);
+// Read settings from configuration
+var mqttSettings = configuration.GetSection("MQTT");
+
+// Connect to the Event Grid MQTT broker
+var mqttClient = await MQTTConnection.CreateClient(mqttSettings["X509Pem"], 
+                                                   mqttSettings["X509Key"], 
+                                                   mqttSettings["Hostname"], 
+                                                   mqttSettings["ClientId"]).ConfigureAwait(false);
 
 // Set up the lights
 var blinkt = new Blinkt();
@@ -25,7 +34,7 @@ mqttClient.ApplicationMessageReceivedAsync += async m =>
     var payload = m.ApplicationMessage.ConvertPayloadToString();
 
     // Log the message
-    await Console.Out.WriteAsync($"Received message on topic: '{m.ApplicationMessage.Topic}' with content: '{payload}'\n\n");
+    await Console.Out.WriteAsync($"Received message on topic: '{m.ApplicationMessage.Topic}' with content: '{payload}'\n").ConfigureAwait(false);
 
     // Update the lights
     var co2Record = JsonSerializer.Deserialize<CO2Measurement>(payload)!;
@@ -51,7 +60,7 @@ mqttClient.ApplicationMessageReceivedAsync += async m =>
 };
 
 // Start listening for messages
-var suback = await mqttClient.SubscribeAsync("CO2TopicSpace/co2");
+var suback = await mqttClient.SubscribeAsync(mqttSettings["Topic"]);
 suback.Items.ToList().ForEach(s => Console.WriteLine($"subscribed to '{s.TopicFilter.Topic}' with '{s.ResultCode}'"));
 
 // Loop forever

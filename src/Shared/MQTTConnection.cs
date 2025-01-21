@@ -6,8 +6,17 @@ namespace CO2Sensor.Shared;
 
 public static class MQTTConnection
 {
-    public static async Task<IMqttClient> CreateClient(string x509_pem, string x509_key, string hostname, string clientId, string userName)
+    public static async Task<IMqttClient> CreateClient(string? x509_pem, string? x509_key, string? hostname, string? clientId)
     {
+        // Check the values - these are read from the appsettings.json file
+        if (string.IsNullOrEmpty(hostname) || 
+            string.IsNullOrEmpty(clientId) || 
+            string.IsNullOrEmpty(x509_pem) || 
+            string.IsNullOrEmpty(x509_key))
+        {
+            throw new ArgumentException("MQTT settings are not properly configured.");
+        }
+
         // Load certificate and private key from PEM files
         var certificate = new X509Certificate2(X509Certificate2.CreateFromPemFile(x509_pem, x509_key).Export(X509ContentType.Pkcs12));
 
@@ -23,7 +32,7 @@ public static class MQTTConnection
         var clientOptions = new MqttClientOptionsBuilder()
             .WithTcpServer(hostname, 8883)
             .WithClientId(clientId)
-            .WithCredentials(userName, "")
+            .WithCredentials(clientId, "")
             .WithTlsOptions(tlsOptions)
             .Build();
 
