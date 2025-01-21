@@ -40,7 +40,9 @@ To set up the Azure services, you can use the Azure CLI. This can also be instal
 - [.NET install instructions](https://learn.microsoft.com/dotnet/core/tools/dotnet-install-script)
 - [Grove Base Hat installtion and configuration](https://wiki.seeedstudio.com/Grove_Base_Hat_for_Raspberry_Pi/#installation)
 - [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli-linux?pivots=apt)
-= [Step CLI](https://smallstep.com/docs/step-cli/installation/)
+- [Step CLI](https://smallstep.com/docs/step-cli/installation/)
+
+Finally, clone this repo to your Raspberry Pi, and open it in something like VS Code.
 
 ## Cloud configuration
 
@@ -105,7 +107,7 @@ This will create a topic space called `co2-topics` that allows you to publish an
 
 ### Create X.509 certificates
 
-To authenticate the device, you will need an X.509 certificate. Seeing as this Raspberry Pi is running as 2 devices, you will need 2 certificates so that each app can pretend to be a separate client.
+To authenticate the device, you will need an X.509 certificate. Each device can have its own cert, or can share a cert. In this case, to make things easier, they sensor and monitor apps will share a cert.
 
 From another device (not your Raspberry Pi), make sure you have the [Step CLI](https://smallstep.com/docs/step-cli/installation/#testing-your-installation) installed. This doesn't support ARM64, so cannot run on a Pi.
 
@@ -121,7 +123,7 @@ From another device (not your Raspberry Pi), make sure you have the [Step CLI](h
 
     This creates the certificate with the name `MqttAppSamplesCA` and  provisioner `MqttAppSamplesCAProvisioner` - you can change these if you want. You will be asked for a password.
 
-1. Once you have the root CA, generate a certificate for the sensor app:
+1. Once you have the root CA, generate a certificate:
 
     ```bash
     step certificate create sensor-cert sensor-cert.pem sensor-cert.key --ca .step/certs/intermediate_ca.crt \
@@ -133,24 +135,13 @@ From another device (not your Raspberry Pi), make sure you have the [Step CLI](h
 
     You will be asked for the password you set in the previous step.
 
-1. Get the thumbprint for the sensor cert:
+1. Get the thumbprint for the cert:
 
     ```bash
     step certificate fingerprint sensor-cert.pem
     ```
 
-1. Repeat the previous 2 steps for the monitor app:
-
-    ```bash
-    step certificate create monitor-cert monitor-cert.pem monitor-cert.key --ca .step/certs/intermediate_ca.crt \
-                                                                           --ca-key .step/secrets/intermediate_ca_key \
-                                                                           --no-password \
-                                                                           --insecure \
-                                                                           --not-after 2400h
-    step certificate fingerprint monitor-cert.pem
-    ```
-
-1. Copy the generated `sensor.pem`, `sensor.key`, `monitor.pem`, and `monitor.key` files to your Raspberry Pi. Put the sensor files in the `src/Sensor` folder, and the monitor files in the `src/Monitor` folder.
+1. Copy the generated `sensor.pem` and `sensor.key` files to your Raspberry Pi. Put them in the root folder of this repo.
 
 ### Create the MQTT clients
 
@@ -167,7 +158,7 @@ For a client, such as a sensor device, to connect, it needs to be enabled as a c
 
     Set the `--namespace-name` to the name of your event grid namespace. If you called your resource group something other than `rg-co2-sensor`, replace this too.
 
-    Replace `<sensor thumbprint>` in the `--client-certificate-authentication` value with the thumbprint for the sensor certificate. This is an array of values, so you need the surrounding square brackets.
+    Replace `<sensor thumbprint>` in the `--client-certificate-authentication` value with the thumbprint for the certificate. This is an array of values, so you need the surrounding square brackets.
 
 
 1. Create the monitor client in the same way:
@@ -176,12 +167,12 @@ For a client, such as a sensor device, to connect, it needs to be enabled as a c
     az eventgrid namespace client create --namespace-name <event grid name> \
                                          --resource-group rg-co2-sensor \
                                          --name co2-monitor \
-                                         --client-certificate-authentication "{validationScheme:ThumbprintMatch,allowed-thumbprints:[<monitor thumbprint>]}"
+                                         --client-certificate-authentication "{validationScheme:ThumbprintMatch,allowed-thumbprints:[<sensor thumbprint>]}"
     ```
 
     Set the `--namespace-name` to the name of your event grid namespace. If you called your resource group something other than `rg-co2-sensor`, replace this too.
 
-    Replace `<monitor thumbprint>` in the `--client-certificate-authentication` value with the thumbprint for the monitor certificate.
+    Replace `<sensor thumbprint>` in the `--client-certificate-authentication` value with the thumbprint for the certificate, the same as in the previous step.
 
 ### Create permission bindings
 
@@ -218,8 +209,16 @@ You will need to set some configuration in the sensor and monitor apps. These ar
 1. Copy the `appsettings.json.example` file to `appsettings.json` in each folder.
 1. In these files, set the following:
 
-    - "Hostname" - the hostname of the MQTT server. This is the `hostname` from the output of the event grid creation.
-    - "Topic" - the name of the topic from the topic space. This is `co2-readings` if you used the values above.
+    ```json
+    {
+      "Hostname": <the hostname of the MQTT server>,
+      "Topic": "co2-readings",
+      "X509Pem": "../../sensor-cert.pem",
+      "X509Key": "../../sensor-cert.key",
+    }
+    ```
+
+    Set `"Hostname"` to the hostname of the MQTT server. This is the `hostname` from the output of the event grid creation. The paths to the `sensor-cert.pem` and `sensor-cert.key` files assume you placed these files in the root of where you cloned this repo.
 
 1. In the `appsettings.json` file in the `Sensor` folder, set the following:
 
@@ -227,8 +226,6 @@ You will need to set some configuration in the sensor and monitor apps. These ar
     {
       ...
       "ClientId": "co2-sensor",
-      "X509Pem": "sensor-cert.pem",
-      "X509Key": "sensor-cert.key",
     }
     ```
 
@@ -238,8 +235,6 @@ You will need to set some configuration in the sensor and monitor apps. These ar
     {
       ...
       "ClientId": "co2-monitor",
-      "X509Pem": "monitor-cert.pem",
-      "X509Key": "monitor-cert.key",
     }
     ```
 
